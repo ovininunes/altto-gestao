@@ -261,6 +261,29 @@ export default function App() {
     setVendaForm({ item_id: '', quantidade: '1', status: 'pago' })
   }
 
+  function excluirFinanceiro(id) {
+    const alvoFin = financeiro.find((f) => f.id === id)
+    setFinanceiro((prev) => prev.filter((f) => f.id !== id))
+
+    if (alvoFin && alvoFin.tipo === 'receita' && typeof alvoFin.descricao === 'string') {
+      const match = alvoFin.descricao.match(/^Venda:\s*(\d+)x\s+(.+)$/)
+      if (match) {
+        const qtdDevolver = Number(match[1] || 0)
+        const nomeItem = match[2].trim()
+
+        if (qtdDevolver > 0) {
+          setItens((prev) =>
+            prev.map((item) =>
+              item.nome.trim() === nomeItem
+                ? { ...item, estoque_atual: Number(item.estoque_atual || 0) + qtdDevolver }
+                : item
+            )
+          )
+        }
+      }
+    }
+  }
+
   function adicionarFinanceiro(e) {
     e.preventDefault()
     if (!novoFin.descricao || !novoFin.valor) return
@@ -985,7 +1008,7 @@ export default function App() {
                           {item.status === 'pago' ? 'Pago' : 'Pendente'}
                         </button>
                         <button
-                          onClick={() => setFinanceiro((prev) => prev.filter((f) => f.id !== item.id))}
+                          onClick={() => excluirFinanceiro(item.id)}
                           className="text-[#2B2B2B]/40 hover:text-[#4A1525] cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
