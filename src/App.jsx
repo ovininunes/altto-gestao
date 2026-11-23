@@ -132,6 +132,25 @@ export default function App() {
     })
   }, [itens])
 
+  const resumoEstoque = useMemo(() => {
+    const totalUnidades = itensCalculados.reduce((acc, i) => acc + Number(i.estoque_atual || 0), 0)
+    const totalCusto = itensCalculados.reduce(
+      (acc, i) => acc + Number(i.custo_compra || 0) * Number(i.estoque_atual || 0),
+      0
+    )
+    const totalVenda = itensCalculados.reduce(
+      (acc, i) => acc + Number(i.preco_venda || 0) * Number(i.estoque_atual || 0),
+      0
+    )
+    const mediaMargem = totalVenda > 0
+      ? ((totalVenda - totalCusto) / totalVenda) * 100
+      : itensCalculados.length > 0
+        ? itensCalculados.reduce((acc, i) => acc + i.margem, 0) / itensCalculados.length
+        : 0
+
+    return { totalUnidades, totalCusto, totalVenda, mediaMargem }
+  }, [itensCalculados])
+
   const estoqueBaixo = useMemo(() => {
     return itensCalculados.filter((i) => Number(i.estoque_atual) <= Number(i.estoque_minimo))
   }, [itensCalculados])
@@ -790,67 +809,88 @@ export default function App() {
               </div>
             </div>
 
-            <div className="lg:col-span-2 bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-5">
-              <h2 className="font-bold text-base mb-4">Estoque, custos e margens</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="text-xs border-b border-[#2B2B2B]/15 text-[#2B2B2B]/70">
-                    <tr>
-                      <th className="py-2 pr-3 font-semibold">Item</th>
-                      <th className="py-2 px-2 font-semibold">Custo</th>
-                      <th className="py-2 px-2 font-semibold">Venda</th>
-                      <th className="py-2 px-2 font-semibold">Margem</th>
-                      <th className="py-2 px-2 font-semibold">Estoque</th>
-                      <th className="py-2 pl-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#2B2B2B]/10">
-                    {itensCalculados.map((i) => {
-                      const baixo = Number(i.estoque_atual) <= Number(i.estoque_minimo)
-                      return (
-                        <tr key={i.id}>
-                          <td className="py-2.5 pr-3">
-                            <div className="flex items-center gap-3">
-                              {i.foto ? (
-                                <img src={i.foto} alt={i.nome} className="w-11 h-11 rounded-lg object-cover shrink-0 border border-[#2B2B2B]/15" />
-                              ) : (
-                                <div className="w-11 h-11 rounded-lg bg-[#D5E1D9] flex items-center justify-center shrink-0 text-[#4A1525]">
-                                  <Wine className="w-5 h-5" />
+            <div className="lg:col-span-2 bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-5 flex flex-col justify-between">
+              <div>
+                <h2 className="font-bold text-base mb-4">Estoque, custos e margens</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs border-b border-[#2B2B2B]/15 text-[#2B2B2B]/70">
+                      <tr>
+                        <th className="py-2 pr-3 font-semibold">Item</th>
+                        <th className="py-2 px-2 font-semibold">Custo</th>
+                        <th className="py-2 px-2 font-semibold">Venda</th>
+                        <th className="py-2 px-2 font-semibold">Margem</th>
+                        <th className="py-2 px-2 font-semibold">Estoque</th>
+                        <th className="py-2 pl-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2B2B2B]/10">
+                      {itensCalculados.map((i) => {
+                        const baixo = Number(i.estoque_atual) <= Number(i.estoque_minimo)
+                        return (
+                          <tr key={i.id}>
+                            <td className="py-2.5 pr-3">
+                              <div className="flex items-center gap-3">
+                                {i.foto ? (
+                                  <img src={i.foto} alt={i.nome} className="w-11 h-11 rounded-lg object-cover shrink-0 border border-[#2B2B2B]/15" />
+                                ) : (
+                                  <div className="w-11 h-11 rounded-lg bg-[#D5E1D9] flex items-center justify-center shrink-0 text-[#4A1525]">
+                                    <Wine className="w-5 h-5" />
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="font-semibold">{i.nome}</p>
+                                  <span className="text-[11px] text-[#2B2B2B]/60">{i.categoria}</span>
                                 </div>
-                              )}
-                              <div>
-                                <p className="font-semibold">{i.nome}</p>
-                                <span className="text-[11px] text-[#2B2B2B]/60">{i.categoria}</span>
                               </div>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-2 text-[#4A1525] font-semibold">{brl(i.custo_compra)}</td>
-                          <td className="py-2.5 px-2 font-semibold">{brl(i.preco_venda)}</td>
-                          <td className="py-2.5 px-2">
-                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#D5E1D9] text-[#2B2B2B]">
-                              {i.margem.toFixed(1)}%
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-2">
-                            <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${
-                              baixo ? 'bg-[#4A1525] text-[#F9F8F6]' : 'bg-white border border-[#2B2B2B]/15'
-                            }`}>
-                              {i.estoque_atual} un
-                            </span>
-                          </td>
-                          <td className="py-2.5 pl-2 text-right">
-                            <button
-                              onClick={() => setItens((prev) => prev.filter((item) => item.id !== i.id))}
-                              className="text-[#2B2B2B]/40 hover:text-[#4A1525] cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="py-2.5 px-2 text-[#4A1525] font-semibold">{brl(i.custo_compra)}</td>
+                            <td className="py-2.5 px-2 font-semibold">{brl(i.preco_venda)}</td>
+                            <td className="py-2.5 px-2">
+                              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#D5E1D9] text-[#2B2B2B]">
+                                {i.margem.toFixed(1)}%
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2">
+                              <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${
+                                baixo ? 'bg-[#4A1525] text-[#F9F8F6]' : 'bg-white border border-[#2B2B2B]/15'
+                              }`}>
+                                {i.estoque_atual} un
+                              </span>
+                            </td>
+                            <td className="py-2.5 pl-2 text-right">
+                              <button
+                                onClick={() => setItens((prev) => prev.filter((item) => item.id !== i.id))}
+                                className="text-[#2B2B2B]/40 hover:text-[#4A1525] cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t-2 border-[#4A1525]/25 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white p-3 rounded-xl border border-[#2B2B2B]/15">
+                  <span className="text-[11px] font-semibold text-[#2B2B2B]/65 block">Total de custo</span>
+                  <span className="font-bold text-sm text-[#4A1525]">{brl(resumoEstoque.totalCusto)}</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-[#2B2B2B]/15">
+                  <span className="text-[11px] font-semibold text-[#2B2B2B]/65 block">Total valor de venda</span>
+                  <span className="font-bold text-sm text-emerald-700">{brl(resumoEstoque.totalVenda)}</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-[#2B2B2B]/15">
+                  <span className="text-[11px] font-semibold text-[#2B2B2B]/65 block">Média de margem</span>
+                  <span className="font-bold text-sm text-[#2B2B2B]">{resumoEstoque.mediaMargem.toFixed(1)}%</span>
+                </div>
+                <div className="bg-[#D5E1D9] p-3 rounded-xl border border-[#4A1525]/25">
+                  <span className="text-[11px] font-semibold text-[#2B2B2B]/75 block">Total em estoque</span>
+                  <span className="font-bold text-sm text-[#4A1525]">{resumoEstoque.totalUnidades} un</span>
+                </div>
               </div>
             </div>
           </div>
