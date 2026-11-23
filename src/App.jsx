@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
 import {
   LayoutDashboard, Wine, DollarSign, LogOut, Plus, Trash2,
-  AlertTriangle, CheckCircle2, Clock, Download, ShoppingCart,
+  AlertTriangle, CheckCircle2, Clock, Download, Upload, ShoppingCart,
   TrendingUp, Bell, Calendar, X, PackagePlus, ImagePlus
 } from 'lucide-react'
 
@@ -55,6 +55,7 @@ export default function App() {
   const [itens, setItens] = useState(() => lerLocal('altto_itens'))
   const [financeiro, setFinanceiro] = useState(() => lerLocal('altto_financeiro'))
   const [fotoInputKey, setFotoInputKey] = useState(0)
+  const restoreInputRef = useRef(null)
 
   useEffect(() => { localStorage.setItem('altto_itens', JSON.stringify(itens)) }, [itens])
   useEffect(() => { localStorage.setItem('altto_financeiro', JSON.stringify(financeiro)) }, [financeiro])
@@ -346,6 +347,55 @@ export default function App() {
     XLSX.writeFile(wb, `ALTTO_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
+  function exportarBackupJson() {
+    const payload = {
+      sistema: 'ALTTO',
+      versao: 1,
+      exportado_em: new Date().toISOString(),
+      itens,
+      financeiro
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ALTTO_BACKUP_${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  function importarBackupJson(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const dados = JSON.parse(String(reader.result || '{}'))
+        if (!Array.isArray(dados.itens) || !Array.isArray(dados.financeiro)) {
+          alert('Arquivo inválido. Selecione um backup .json gerado pela ALTTO.')
+          return
+        }
+
+        const confirmar = window.confirm(
+          `Restaurar ${dados.itens.length} produto(s) (com fotos) e ${dados.financeiro.length} lançamento(s) financeiros?\n\nIsso substituirá os dados atuais deste navegador.`
+        )
+        if (!confirmar) return
+
+        setItens(dados.itens)
+        setFinanceiro(dados.financeiro)
+        alert('Backup completo restaurado com sucesso!')
+      } catch {
+        alert('Não foi possível ler o arquivo .json. Verifique se o arquivo não está corrompido.')
+      } finally {
+        e.target.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
   if (!autenticado) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#D5E1D9] p-4">
@@ -387,7 +437,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#D5E1D9] text-[#2B2B2B] pb-20 md:pb-8">
       <header className="bg-[#F9F8F6] border-b-2 border-[#4A1525] sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="ALTTO" className="w-11 h-11 rounded-full object-cover border border-[#4A1525]" />
             <div>
@@ -396,17 +446,45 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={importarBackupJson}
+              className="hidden"
+            />
             <button
-              onClick={exportarExcel}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#D5E1D9] hover:bg-[#C3D4C9] border border-[#2B2B2B]/20 text-xs font-semibold cursor-pointer"
+              type="button"
+              onClick={exportarBackupJson}
+              title="Baixar backup completo com fotos (.json)"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#4A1525] hover:bg-[#350D1A] text-[#F9F8F6] text-xs font-semibold cursor-pointer"
             >
-              <Download className="w-4 h-4 text-[#4A1525]" />
-              <span className="hidden sm:inline">Backup Excel</span>
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Backup Completo</span>
             </button>
             <button
+              type="button"
+              onClick={() => restoreInputRef.current?.click()}
+              title="Restaurar backup completo (.json)"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-[#D5E1D9]/60 border border-[#4A1525]/40 text-[#4A1525] text-xs font-semibold cursor-pointer"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">Restaurar</span>
+            </button>
+            <button
+              type="button"
+              onClick={exportarExcel}
+              title="Baixar planilha Excel (.xlsx)"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#D5E1D9] hover:bg-[#C3D4C9] border border-[#2B2B2B]/20 text-xs font-semibold cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-[#4A1525]" />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+            <button
+              type="button"
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] text-xs font-semibold hover:bg-[#4A1525] transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] text-xs font-semibold hover:bg-[#4A1525] transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">Sair</span>
