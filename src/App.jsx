@@ -6,7 +6,8 @@ import {
 import {
   LayoutDashboard, Wine, DollarSign, LogOut, Plus, Trash2,
   AlertTriangle, CheckCircle2, Clock, Download, Upload, ShoppingCart,
-  TrendingUp, Bell, Calendar, X, PackagePlus, ImagePlus
+  TrendingUp, Bell, Calendar, X, PackagePlus, ImagePlus,
+  Pencil, ZoomIn, ClipboardList, Check
 } from 'lucide-react'
 
 const SENHA_SISTEMA = 'altto2026'
@@ -21,7 +22,7 @@ function processarImagemParaBase64(file) {
     reader.onload = () => {
       const img = new Image()
       img.onload = () => {
-        const maxSize = 240
+        const maxSize = 480
         let width = img.width
         let height = img.height
         if (width > height && width > maxSize) {
@@ -36,7 +37,7 @@ function processarImagemParaBase64(file) {
         canvas.height = height
         const ctx = canvas.getContext('2d')
         ctx.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', 0.78))
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
       }
       img.onerror = reject
       img.src = reader.result
@@ -54,11 +55,13 @@ export default function App() {
   const [aba, setAba] = useState('dashboard')
   const [itens, setItens] = useState(() => lerLocal('altto_itens'))
   const [financeiro, setFinanceiro] = useState(() => lerLocal('altto_financeiro'))
+  const [encomendas, setEncomendas] = useState(() => lerLocal('altto_encomendas'))
   const [fotoInputKey, setFotoInputKey] = useState(0)
   const restoreInputRef = useRef(null)
 
   useEffect(() => { localStorage.setItem('altto_itens', JSON.stringify(itens)) }, [itens])
   useEffect(() => { localStorage.setItem('altto_financeiro', JSON.stringify(financeiro)) }, [financeiro])
+  useEffect(() => { localStorage.setItem('altto_encomendas', JSON.stringify(encomendas)) }, [encomendas])
 
   const [novoItem, setNovoItem] = useState({
     nome: '',
@@ -68,6 +71,18 @@ export default function App() {
     estoque_atual: '1',
     estoque_minimo: '2',
     foto: ''
+  })
+
+  const [itemEditando, setItemEditando] = useState(null)
+  const [fotoZoomItem, setFotoZoomItem] = useState(null)
+
+  const [novaEncomenda, setNovaEncomenda] = useState({
+    nome: '',
+    categoria: 'Vinho',
+    custo_compra: '',
+    preco_venda: '',
+    quantidade: '1',
+    observacao: ''
   })
 
   const [compraForm, setCompraForm] = useState({
@@ -120,6 +135,17 @@ export default function App() {
       setNovoItem((prev) => ({ ...prev, foto: base64 }))
     } catch {
       setNovoItem((prev) => ({ ...prev, foto: '' }))
+    }
+  }
+
+  async function handleSelecionarFotoEdicao(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const base64 = await processarImagemParaBase64(file)
+      setItemEditando((prev) => (prev ? { ...prev, foto: base64 } : null))
+    } catch {
+      // mantém foto atual em caso de erro
     }
   }
 
@@ -230,6 +256,95 @@ export default function App() {
     setItens((prev) => [...prev, criado].sort((a, b) => a.nome.localeCompare(b.nome)))
     setNovoItem({ nome: '', categoria: 'Vinho', custo_compra: '', preco_venda: '', estoque_atual: '1', estoque_minimo: '2', foto: '' })
     setFotoInputKey((k) => k + 1)
+  }
+
+  function salvarEdicaoItem(e) {
+    e.preventDefault()
+    if (!itemEditando || !itemEditando.nome.trim()) return
+
+    setItens((prev) =>
+      prev
+        .map((item) =>
+          item.id === itemEditando.id
+            ? {
+                ...item,
+                nome: itemEditando.nome.trim(),
+                categoria: itemEditando.categoria,
+                custo_compra: Number(itemEditando.custo_compra || 0),
+                preco_venda: Number(itemEditando.preco_venda || 0),
+                estoque_atual: Number(itemEditando.estoque_atual || 0),
+                estoque_minimo: Number(itemEditando.estoque_minimo || 0),
+                foto: itemEditando.foto || ''
+              }
+            : item
+        )
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+    )
+    setItemEditando(null)
+  }
+
+  function cadastrarEncomenda(e) {
+    e.preventDefault()
+    if (!novaEncomenda.nome.trim()) return
+    const criada = {
+      id: crypto.randomUUID(),
+      nome: novaEncomenda.nome.trim(),
+      categoria: novaEncomenda.categoria,
+      custo_compra: Number(novaEncomenda.custo_compra || 0),
+      preco_venda: Number(novaEncomenda.preco_venda || 0),
+      quantidade: Math.max(1, Number(novaEncomenda.quantidade || 1)),
+      observacao: novaEncomenda.observacao.trim(),
+      criada_em: new Date().toISOString().split('T')[0]
+    }
+    setEncomendas((prev) => [criada, ...prev])
+    setNovaEncomenda({
+      nome: '',
+      categoria: 'Vinho',
+      custo_compra: '',
+      preco_venda: '',
+      quantidade: '1',
+      observacao: ''
+    })
+  }
+
+  function concluirEncomendaParaEstoque(enc) {
+    const qtd = Math.max(1, Number(enc.quantidade || 1))
+    const custo = Number(enc.custo_compra || 0)
+    const venda = Number(enc.preco_venda || 0)
+    const nomeNormalizado = enc.nome.trim().toLowerCase()
+
+    setItens((prev) => {
+      const existente = prev.find((i) => i.nome.trim().toLowerCase() === nomeNormalizado)
+      if (existente) {
+        return prev
+          .map((i) =>
+            i.id === existente.id
+              ? {
+                  ...i,
+                  categoria: enc.categoria || i.categoria,
+                  custo_compra: custo > 0 ? custo : i.custo_compra,
+                  preco_venda: venda > 0 ? venda : i.preco_venda,
+                  estoque_atual: Number(i.estoque_atual || 0) + qtd
+                }
+              : i
+          )
+          .sort((a, b) => a.nome.localeCompare(b.nome))
+      }
+
+      const novoProduto = {
+        id: crypto.randomUUID(),
+        nome: enc.nome.trim(),
+        categoria: enc.categoria || 'Vinho',
+        custo_compra: custo,
+        preco_venda: venda,
+        estoque_atual: qtd,
+        estoque_minimo: 2,
+        foto: ''
+      }
+      return [...prev, novoProduto].sort((a, b) => a.nome.localeCompare(b.nome))
+    })
+
+    setEncomendas((prev) => prev.filter((item) => item.id !== enc.id))
   }
 
   function registrarCompra(e) {
@@ -344,16 +459,25 @@ export default function App() {
       Estoque_Minimo: i.estoque_minimo
     }))), 'Estoque_Vinhos_Perfumes')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(financeiro), 'Financeiro')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(encomendas.map((e) => ({
+      Nome: e.nome,
+      Categoria: e.categoria,
+      Custo_Unitario: Number(e.custo_compra),
+      Preco_Venda: Number(e.preco_venda),
+      Quantidade: Number(e.quantidade),
+      Observacao: e.observacao || ''
+    }))), 'Encomendas')
     XLSX.writeFile(wb, `ALTTO_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
   function exportarBackupJson() {
     const payload = {
       sistema: 'ALTTO',
-      versao: 1,
+      versao: 2,
       exportado_em: new Date().toISOString(),
       itens,
-      financeiro
+      financeiro,
+      encomendas
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -379,13 +503,15 @@ export default function App() {
           return
         }
 
+        const listaEncomendas = Array.isArray(dados.encomendas) ? dados.encomendas : []
         const confirmar = window.confirm(
-          `Restaurar ${dados.itens.length} produto(s) (com fotos) e ${dados.financeiro.length} lançamento(s) financeiros?\n\nIsso substituirá os dados atuais deste navegador.`
+          `Restaurar ${dados.itens.length} produto(s) (com fotos), ${dados.financeiro.length} lançamento(s) financeiros e ${listaEncomendas.length} encomenda(s)?\n\nIsso substituirá os dados atuais deste navegador.`
         )
         if (!confirmar) return
 
         setItens(dados.itens)
         setFinanceiro(dados.financeiro)
+        setEncomendas(listaEncomendas)
         alert('Backup completo restaurado com sucesso!')
       } catch {
         alert('Não foi possível ler o arquivo .json. Verifique se o arquivo não está corrompido.')
@@ -398,7 +524,7 @@ export default function App() {
 
   if (!autenticado) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#D5E1D9] p-4">
+      <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden overscroll-x-none flex items-center justify-center bg-[#D5E1D9] p-4">
         <div className="w-full max-w-md bg-[#F9F8F6] border-2 border-[#4A1525] rounded-2xl p-8 shadow-lg">
           <div className="flex flex-col items-center mb-6">
             <img src="/logo.png" alt="ALTTO Vinhos e Perfumaria" className="w-32 h-32 object-cover rounded-full mb-3 border-2 border-[#4A1525]" />
@@ -412,7 +538,7 @@ export default function App() {
               <input
                 type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
                 placeholder="Digite a senha"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#2B2B2B]/25 focus:outline-none focus:border-[#4A1525]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#2B2B2B]/25 focus:outline-none focus:border-[#4A1525] text-base sm:text-sm"
               />
             </div>
 
@@ -424,7 +550,7 @@ export default function App() {
 
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-[#4A1525] hover:bg-[#350D1A] text-[#F9F8F6] font-semibold tracking-wide transition cursor-pointer"
+              className="w-full py-3 rounded-xl bg-[#4A1525] hover:bg-[#350D1A] text-[#F9F8F6] font-semibold tracking-wide transition cursor-pointer touch-manipulation"
             >
               Entrar
             </button>
@@ -435,14 +561,14 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#D5E1D9] text-[#2B2B2B] pb-20 md:pb-8">
-      <header className="bg-[#F9F8F6] border-b-2 border-[#4A1525] sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="ALTTO" className="w-11 h-11 rounded-full object-cover border border-[#4A1525]" />
+    <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden overscroll-x-none bg-[#D5E1D9] text-[#2B2B2B] pb-24 md:pb-8">
+      <header className="bg-[#F9F8F6] border-b-2 border-[#4A1525] sticky top-0 z-20 w-full">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <img src="/logo.png" alt="ALTTO" className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border border-[#4A1525]" />
             <div>
-              <h1 className="font-bold text-lg leading-none tracking-widest text-[#4A1525]">ALTTO</h1>
-              <span className="text-[11px] font-medium text-[#2B2B2B]/75">Vinhos e Perfumaria</span>
+              <h1 className="font-bold text-base sm:text-lg leading-none tracking-widest text-[#4A1525]">ALTTO</h1>
+              <span className="text-[10px] sm:text-[11px] font-medium text-[#2B2B2B]/75">Vinhos e Perfumaria</span>
             </div>
           </div>
 
@@ -458,7 +584,7 @@ export default function App() {
               type="button"
               onClick={exportarBackupJson}
               title="Baixar backup completo com fotos (.json)"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#4A1525] hover:bg-[#350D1A] text-[#F9F8F6] text-xs font-semibold cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#4A1525] hover:bg-[#350D1A] text-[#F9F8F6] text-xs font-semibold cursor-pointer touch-manipulation"
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">Backup Completo</span>
@@ -467,7 +593,7 @@ export default function App() {
               type="button"
               onClick={() => restoreInputRef.current?.click()}
               title="Restaurar backup completo (.json)"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-[#D5E1D9]/60 border border-[#4A1525]/40 text-[#4A1525] text-xs font-semibold cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-[#D5E1D9]/60 border border-[#4A1525]/40 text-[#4A1525] text-xs font-semibold cursor-pointer touch-manipulation"
             >
               <Upload className="w-4 h-4" />
               <span className="hidden sm:inline">Restaurar</span>
@@ -476,7 +602,7 @@ export default function App() {
               type="button"
               onClick={exportarExcel}
               title="Baixar planilha Excel (.xlsx)"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#D5E1D9] hover:bg-[#C3D4C9] border border-[#2B2B2B]/20 text-xs font-semibold cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#D5E1D9] hover:bg-[#C3D4C9] border border-[#2B2B2B]/20 text-xs font-semibold cursor-pointer touch-manipulation"
             >
               <Download className="w-4 h-4 text-[#4A1525]" />
               <span className="hidden sm:inline">Excel</span>
@@ -484,7 +610,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] text-xs font-semibold hover:bg-[#4A1525] transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] text-xs font-semibold hover:bg-[#4A1525] transition cursor-pointer touch-manipulation"
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">Sair</span>
@@ -496,6 +622,7 @@ export default function App() {
           {[
             { id: 'dashboard', label: 'Visão geral e gráficos', icon: LayoutDashboard },
             { id: 'catalogo', label: 'Compras, vendas e estoque', icon: Wine },
+            { id: 'encomendas', label: `Encomendas${encomendas.length > 0 ? ` (${encomendas.length})` : ''}`, icon: ClipboardList },
             { id: 'financeiro', label: 'Contas e lembretes', icon: DollarSign },
           ].map((item) => {
             const Icon = item.icon
@@ -517,7 +644,7 @@ export default function App() {
       </header>
 
       {lembretesVencimento.length > 0 && (
-        <div className="max-w-6xl mx-auto px-4 pt-4">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 pt-4">
           <div className="bg-[#4A1525] text-[#F9F8F6] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow">
             <div className="flex items-start gap-3">
               <Bell className="w-5 h-5 shrink-0 mt-0.5" />
@@ -525,14 +652,14 @@ export default function App() {
                 <p className="font-semibold text-sm">
                   {lembretesVencimento.length} conta(s) pendente(s) vencendo hoje, atrasada(s) ou nos próximos 3 dias
                 </p>
-                <p className="text-xs text-[#F9F8F6]/90 mt-0.5">
+                <p className="text-xs text-[#F9F8F6]/90 mt-0.5 break-words">
                   {lembretesVencimento.map((l) => `${l.descricao} (${brl(l.valor)} - ${l.data_vencimento.split('-').reverse().join('/')})`).join(' • ')}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setModalPendentesAberto(true)}
-              className="px-3.5 py-2 bg-[#F9F8F6] text-[#4A1525] rounded-xl text-xs font-semibold shrink-0 self-start sm:self-center cursor-pointer"
+              className="px-3.5 py-2 bg-[#F9F8F6] text-[#4A1525] rounded-xl text-xs font-semibold shrink-0 self-start sm:self-center cursor-pointer touch-manipulation"
             >
               Ver contas ({todasPendentes.length})
             </button>
@@ -540,6 +667,197 @@ export default function App() {
         </div>
       )}
 
+      {/* Modal: Ampliar Foto do Produto */}
+      {fotoZoomItem && (
+        <div
+          onClick={() => setFotoZoomItem(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#F9F8F6] border-2 border-[#4A1525] rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="bg-[#4A1525] text-[#F9F8F6] px-4 py-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm truncate">{fotoZoomItem.nome}</h3>
+                <span className="text-[11px] text-[#F9F8F6]/80">{fotoZoomItem.categoria}</span>
+              </div>
+              <button
+                onClick={() => setFotoZoomItem(null)}
+                className="p-1.5 rounded-lg hover:bg-white/20 cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-white flex items-center justify-center">
+              <img
+                src={fotoZoomItem.foto}
+                alt={fotoZoomItem.nome}
+                className="max-h-[65vh] w-auto object-contain rounded-xl border border-[#2B2B2B]/15"
+              />
+            </div>
+
+            <div className="px-4 py-3 bg-[#D5E1D9] border-t border-[#2B2B2B]/15 flex items-center justify-between text-xs">
+              <div>
+                <span className="text-[#2B2B2B]/70">Custo: </span>
+                <strong className="text-[#4A1525]">{brl(fotoZoomItem.custo_compra)}</strong>
+                <span className="mx-2 text-[#2B2B2B]/40">|</span>
+                <span className="text-[#2B2B2B]/70">Venda: </span>
+                <strong className="text-emerald-800">{brl(fotoZoomItem.preco_venda)}</strong>
+              </div>
+              <span className="px-2 py-0.5 rounded-lg bg-white font-semibold">
+                {fotoZoomItem.estoque_atual} un
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Editar Produto no Estoque */}
+      {itemEditando && (
+        <div
+          onClick={() => setItemEditando(null)}
+          className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#F9F8F6] border-2 border-[#4A1525] rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="bg-[#4A1525] text-[#F9F8F6] px-5 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-4 h-4" />
+                <h3 className="font-bold text-sm">Editar item do estoque</h3>
+              </div>
+              <button onClick={() => setItemEditando(null)} className="p-1 rounded-lg hover:bg-white/20 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={salvarEdicaoItem} className="p-5 space-y-3 max-h-[80vh] overflow-y-auto">
+              <div>
+                <label className="text-xs font-semibold">Nome do item</label>
+                <input
+                  required
+                  value={itemEditando.nome}
+                  onChange={(e) => setItemEditando({ ...itemEditando, nome: e.target.value })}
+                  className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold">Categoria</label>
+                <select
+                  value={itemEditando.categoria}
+                  onChange={(e) => setItemEditando({ ...itemEditando, categoria: e.target.value })}
+                  className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                >
+                  <option value="Vinho">Vinho</option>
+                  <option value="Perfume">Perfume</option>
+                  <option value="Lifestyle">Lifestyle</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold">Custo unitário (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={itemEditando.custo_compra}
+                    onChange={(e) => setItemEditando({ ...itemEditando, custo_compra: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold">Preço de venda (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={itemEditando.preco_venda}
+                    onChange={(e) => setItemEditando({ ...itemEditando, preco_venda: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold">Estoque atual</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value={itemEditando.estoque_atual}
+                    onChange={(e) => setItemEditando({ ...itemEditando, estoque_atual: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold">Estoque mínimo</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value={itemEditando.estoque_minimo}
+                    onChange={(e) => setItemEditando({ ...itemEditando, estoque_minimo: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold flex items-center gap-1.5">
+                  <ImagePlus className="w-3.5 h-3.5 text-[#4A1525]" /> Alterar foto (opcional)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleSelecionarFotoEdicao}
+                  className="w-full mt-1 p-2 rounded-xl bg-white border border-[#2B2B2B]/20 text-xs file:mr-2.5 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:bg-[#D5E1D9] file:text-[#2B2B2B] file:font-semibold cursor-pointer"
+                />
+                {itemEditando.foto && (
+                  <div className="mt-2 flex items-center justify-between bg-white p-2 rounded-xl border border-[#2B2B2B]/15">
+                    <div className="flex items-center gap-2.5">
+                      <img src={itemEditando.foto} alt="Prévia" className="w-11 h-11 rounded-lg object-cover border border-[#4A1525]/30" />
+                      <span className="text-xs font-medium text-[#2B2B2B]/75">Foto cadastrada</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setItemEditando({ ...itemEditando, foto: '' })}
+                      className="text-xs font-semibold text-[#4A1525] hover:underline cursor-pointer"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setItemEditando(null)}
+                  className="px-4 py-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-xs font-semibold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-[#4A1525] text-[#F9F8F6] text-xs font-semibold hover:bg-[#350D1A] cursor-pointer"
+                >
+                  Salvar alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Contas Pendentes */}
       {modalPendentesAberto && (
         <div
           onClick={() => setModalPendentesAberto(false)}
@@ -627,30 +945,30 @@ export default function App() {
         </div>
       )}
 
-      <main className="max-w-6xl mx-auto px-4 pt-6 space-y-6">
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 pt-5 sm:pt-6 space-y-6 w-full">
         {aba === 'dashboard' && (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <div className="bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-4">
                 <span className="text-xs font-semibold text-[#2B2B2B]/65">Saldo em caixa</span>
-                <p className={`text-2xl font-bold mt-1 ${resumo.saldo >= 0 ? 'text-[#2B2B2B]' : 'text-[#4A1525]'}`}>
+                <p className={`text-xl sm:text-2xl font-bold mt-1 ${resumo.saldo >= 0 ? 'text-[#2B2B2B]' : 'text-[#4A1525]'}`}>
                   {brl(resumo.saldo)}
                 </p>
               </div>
               <div className="bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-4">
                 <span className="text-xs font-semibold text-[#2B2B2B]/65">Vendas recebidas</span>
-                <p className="text-2xl font-bold mt-1 text-emerald-700">{brl(resumo.receitasPagas)}</p>
+                <p className="text-xl sm:text-2xl font-bold mt-1 text-emerald-700">{brl(resumo.receitasPagas)}</p>
               </div>
               <div className="bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-4">
                 <span className="text-xs font-semibold text-[#2B2B2B]/65">Compras e despesas pagas</span>
-                <p className="text-2xl font-bold mt-1 text-[#4A1525]">{brl(resumo.despesasPagas)}</p>
+                <p className="text-xl sm:text-2xl font-bold mt-1 text-[#4A1525]">{brl(resumo.despesasPagas)}</p>
               </div>
               <div
                 onClick={() => setModalPendentesAberto(true)}
                 className="bg-[#F9F8F6] border-2 border-[#4A1525] rounded-2xl p-4 cursor-pointer hover:bg-[#4A1525]/5 transition"
               >
                 <span className="text-xs font-semibold text-[#4A1525]">Contas a pagar (ver)</span>
-                <p className="text-2xl font-bold mt-1 text-[#4A1525]">{brl(resumo.aPagar)}</p>
+                <p className="text-xl sm:text-2xl font-bold mt-1 text-[#4A1525]">{brl(resumo.aPagar)}</p>
               </div>
             </div>
 
@@ -667,7 +985,7 @@ export default function App() {
                       <select
                         required value={vendaForm.item_id}
                         onChange={(e) => setVendaForm({ ...vendaForm, item_id: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       >
                         <option value="">Selecione...</option>
                         {itensCalculados.map((i) => (
@@ -682,10 +1000,10 @@ export default function App() {
                       <input
                         type="number" min="1" step="1" required value={vendaForm.quantidade}
                         onChange={(e) => setVendaForm({ ...vendaForm, quantidade: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
-                    <button type="submit" className="w-full py-2.5 rounded-xl bg-[#4A1525] text-[#F9F8F6] font-semibold text-sm hover:bg-[#350D1A] cursor-pointer">
+                    <button type="submit" className="w-full py-2.5 rounded-xl bg-[#4A1525] text-[#F9F8F6] font-semibold text-sm hover:bg-[#350D1A] cursor-pointer touch-manipulation">
                       Lançar venda
                     </button>
                   </form>
@@ -699,8 +1017,8 @@ export default function App() {
                     <ul className="space-y-1 text-xs">
                       {estoqueBaixo.map((i) => (
                         <li key={i.id} className="flex justify-between bg-white px-2.5 py-1.5 rounded-lg border border-[#4A1525]/25">
-                          <span className="font-medium">{i.nome}</span>
-                          <span className="text-[#4A1525] font-semibold">{i.estoque_atual} un</span>
+                          <span className="font-medium truncate pr-2">{i.nome}</span>
+                          <span className="text-[#4A1525] font-semibold shrink-0">{i.estoque_atual} un</span>
                         </li>
                       ))}
                     </ul>
@@ -715,7 +1033,7 @@ export default function App() {
                 {resumo.grafico.length === 0 ? (
                   <p className="text-sm text-[#2B2B2B]/60 py-12 text-center">Lance uma venda ou compra/despesa para ver o gráfico.</p>
                 ) : (
-                  <div className="h-64">
+                  <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={resumo.grafico}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#2B2B2B15" />
@@ -747,7 +1065,7 @@ export default function App() {
                     <input
                       required placeholder="Ex: Malbec Reserva / Perfume Árabe" value={novoItem.nome}
                       onChange={(e) => setNovoItem({ ...novoItem, nome: e.target.value })}
-                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                     />
                   </div>
                   <div>
@@ -755,7 +1073,7 @@ export default function App() {
                     <select
                       value={novoItem.categoria}
                       onChange={(e) => setNovoItem({ ...novoItem, categoria: e.target.value })}
-                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                     >
                       <option value="Vinho">Vinho</option>
                       <option value="Perfume">Perfume</option>
@@ -768,7 +1086,7 @@ export default function App() {
                       <input
                         type="number" step="0.01" required placeholder="0,00" value={novoItem.custo_compra}
                         onChange={(e) => setNovoItem({ ...novoItem, custo_compra: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
                     <div>
@@ -776,7 +1094,7 @@ export default function App() {
                       <input
                         type="number" step="0.01" required placeholder="0,00" value={novoItem.preco_venda}
                         onChange={(e) => setNovoItem({ ...novoItem, preco_venda: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
                   </div>
@@ -786,7 +1104,7 @@ export default function App() {
                       <input
                         type="number" min="0" step="1" value={novoItem.estoque_atual}
                         onChange={(e) => setNovoItem({ ...novoItem, estoque_atual: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
                     <div>
@@ -794,7 +1112,7 @@ export default function App() {
                       <input
                         type="number" min="0" step="1" value={novoItem.estoque_minimo}
                         onChange={(e) => setNovoItem({ ...novoItem, estoque_minimo: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
                   </div>
@@ -827,7 +1145,7 @@ export default function App() {
                     )}
                   </div>
 
-                  <button type="submit" className="w-full py-2.5 rounded-xl bg-[#4A1525] text-[#F9F8F6] font-semibold text-sm hover:bg-[#350D1A] cursor-pointer">
+                  <button type="submit" className="w-full py-2.5 rounded-xl bg-[#4A1525] text-[#F9F8F6] font-semibold text-sm hover:bg-[#350D1A] cursor-pointer touch-manipulation">
                     Salvar item
                   </button>
                 </form>
@@ -843,7 +1161,7 @@ export default function App() {
                     <select
                       required value={compraForm.item_id}
                       onChange={(e) => setCompraForm({ ...compraForm, item_id: e.target.value })}
-                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                     >
                       <option value="">Selecione...</option>
                       {itens.map((i) => (
@@ -857,7 +1175,7 @@ export default function App() {
                       <input
                         type="number" min="1" step="1" required value={compraForm.quantidade}
                         onChange={(e) => setCompraForm({ ...compraForm, quantidade: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
                     <div>
@@ -865,7 +1183,7 @@ export default function App() {
                       <input
                         type="number" step="0.01" required placeholder="0,00" value={compraForm.valor_total}
                         onChange={(e) => setCompraForm({ ...compraForm, valor_total: e.target.value })}
-                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                        className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                       />
                     </div>
                   </div>
@@ -874,23 +1192,23 @@ export default function App() {
                     <select
                       value={compraForm.status}
                       onChange={(e) => setCompraForm({ ...compraForm, status: e.target.value })}
-                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                     >
                       <option value="pago">Pago</option>
                       <option value="pendente">Pendente (gerar lembrete)</option>
                     </select>
                   </div>
-                  <button type="submit" className="w-full py-2.5 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] font-semibold text-sm hover:bg-[#4A1525] cursor-pointer">
+                  <button type="submit" className="w-full py-2.5 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] font-semibold text-sm hover:bg-[#4A1525] cursor-pointer touch-manipulation">
                     Entrada no estoque e caixa
                   </button>
                 </form>
               </div>
             </div>
 
-            <div className="lg:col-span-2 bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-5 flex flex-col justify-between">
+            <div className="lg:col-span-2 bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-4 sm:p-5 flex flex-col justify-between min-w-0">
               <div>
                 <h2 className="font-bold text-base mb-4">Estoque, custos e margens</h2>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto -mx-1 px-1">
                   <table className="w-full text-sm text-left">
                     <thead className="text-xs border-b border-[#2B2B2B]/15 text-[#2B2B2B]/70">
                       <tr>
@@ -899,7 +1217,7 @@ export default function App() {
                         <th className="py-2 px-2 font-semibold">Venda</th>
                         <th className="py-2 px-2 font-semibold">Margem</th>
                         <th className="py-2 px-2 font-semibold">Estoque</th>
-                        <th className="py-2 pl-2"></th>
+                        <th className="py-2 pl-2 text-right font-semibold">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#2B2B2B]/10">
@@ -908,41 +1226,74 @@ export default function App() {
                         return (
                           <tr key={i.id}>
                             <td className="py-2.5 pr-3">
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2.5">
                                 {i.foto ? (
-                                  <img src={i.foto} alt={i.nome} className="w-11 h-11 rounded-lg object-cover shrink-0 border border-[#2B2B2B]/15" />
+                                  <button
+                                    type="button"
+                                    onClick={() => setFotoZoomItem(i)}
+                                    title="Ampliar foto"
+                                    className="relative group w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-[#4A1525]/30 cursor-pointer touch-manipulation"
+                                  >
+                                    <img src={i.foto} alt={i.nome} className="w-full h-full object-cover" />
+                                    <span className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                                      <ZoomIn className="w-4 h-4 text-white" />
+                                    </span>
+                                  </button>
                                 ) : (
                                   <div className="w-11 h-11 rounded-lg bg-[#D5E1D9] flex items-center justify-center shrink-0 text-[#4A1525]">
                                     <Wine className="w-5 h-5" />
                                   </div>
                                 )}
-                                <div>
-                                  <p className="font-semibold">{i.nome}</p>
-                                  <span className="text-[11px] text-[#2B2B2B]/60">{i.categoria}</span>
+                                <div className="min-w-0">
+                                  <p className="font-semibold leading-snug">{i.nome}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[11px] text-[#2B2B2B]/60">{i.categoria}</span>
+                                    {i.foto && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setFotoZoomItem(i)}
+                                        className="text-[11px] font-semibold text-[#4A1525] hover:underline flex items-center gap-0.5 cursor-pointer"
+                                      >
+                                        <ZoomIn className="w-3 h-3" /> Ampliar
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="py-2.5 px-2 text-[#4A1525] font-semibold">{brl(i.custo_compra)}</td>
-                            <td className="py-2.5 px-2 font-semibold">{brl(i.preco_venda)}</td>
-                            <td className="py-2.5 px-2">
+                            <td className="py-2.5 px-2 text-[#4A1525] font-semibold whitespace-nowrap">{brl(i.custo_compra)}</td>
+                            <td className="py-2.5 px-2 font-semibold whitespace-nowrap">{brl(i.preco_venda)}</td>
+                            <td className="py-2.5 px-2 whitespace-nowrap">
                               <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[#D5E1D9] text-[#2B2B2B]">
                                 {i.margem.toFixed(1)}%
                               </span>
                             </td>
-                            <td className="py-2.5 px-2">
+                            <td className="py-2.5 px-2 whitespace-nowrap">
                               <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${
                                 baixo ? 'bg-[#4A1525] text-[#F9F8F6]' : 'bg-white border border-[#2B2B2B]/15'
                               }`}>
                                 {i.estoque_atual} un
                               </span>
                             </td>
-                            <td className="py-2.5 pl-2 text-right">
-                              <button
-                                onClick={() => setItens((prev) => prev.filter((item) => item.id !== i.id))}
-                                className="text-[#2B2B2B]/40 hover:text-[#4A1525] cursor-pointer"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                            <td className="py-2.5 pl-2 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setItemEditando({ ...i })}
+                                  title="Editar item"
+                                  className="p-1.5 rounded-lg text-[#2B2B2B]/60 hover:text-[#4A1525] hover:bg-[#D5E1D9]/60 cursor-pointer touch-manipulation"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setItens((prev) => prev.filter((item) => item.id !== i.id))}
+                                  title="Excluir item"
+                                  className="p-1.5 rounded-lg text-[#2B2B2B]/40 hover:text-[#4A1525] hover:bg-[#4A1525]/10 cursor-pointer touch-manipulation"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )
@@ -974,6 +1325,175 @@ export default function App() {
           </div>
         )}
 
+        {aba === 'encomendas' && (
+          <div className="grid lg:grid-cols-3 gap-6">
+            <div className="bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-5">
+              <h2 className="font-bold text-base flex items-center gap-2 mb-4">
+                <ClipboardList className="w-5 h-5 text-[#4A1525]" /> Nova encomenda a comprar
+              </h2>
+              <form onSubmit={cadastrarEncomenda} className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold">Nome do item</label>
+                  <input
+                    required
+                    placeholder="Ex: Cordero con Piel de Lobo / Sabonete Árabe"
+                    value={novaEncomenda.nome}
+                    onChange={(e) => setNovaEncomenda({ ...novaEncomenda, nome: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold">Categoria</label>
+                  <select
+                    value={novaEncomenda.categoria}
+                    onChange={(e) => setNovaEncomenda({ ...novaEncomenda, categoria: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  >
+                    <option value="Vinho">Vinho</option>
+                    <option value="Perfume">Perfume</option>
+                    <option value="Lifestyle">Lifestyle</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-semibold">Custo unitário (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      placeholder="0,00"
+                      value={novaEncomenda.custo_compra}
+                      onChange={(e) => setNovaEncomenda({ ...novaEncomenda, custo_compra: e.target.value })}
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">Preço de venda (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      placeholder="0,00"
+                      value={novaEncomenda.preco_venda}
+                      onChange={(e) => setNovaEncomenda({ ...novaEncomenda, preco_venda: e.target.value })}
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold">Quantidade</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    required
+                    value={novaEncomenda.quantidade}
+                    onChange={(e) => setNovaEncomenda({ ...novaEncomenda, quantidade: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold">Observação livre (não vai para o estoque)</label>
+                  <textarea
+                    rows="3"
+                    placeholder="Ex: Encomenda da cliente Ana, trazer do Paraguai / fornecedor X..."
+                    value={novaEncomenda.observacao}
+                    onChange={(e) => setNovaEncomenda({ ...novaEncomenda, observacao: e.target.value })}
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-[#4A1525] text-[#F9F8F6] font-semibold text-sm hover:bg-[#350D1A] cursor-pointer touch-manipulation"
+                >
+                  Adicionar à lista de encomendas
+                </button>
+              </form>
+            </div>
+
+            <div className="lg:col-span-2 bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-bold text-base">Lista de compras / encomendas</h2>
+                  <p className="text-xs text-[#2B2B2B]/65 mt-0.5">
+                    Ao marcar como comprado, o item e a quantidade entram direto no estoque.
+                  </p>
+                </div>
+                <span className="px-3 py-1 rounded-full bg-[#D5E1D9] text-[#4A1525] text-xs font-bold">
+                  {encomendas.length} pendente(s)
+                </span>
+              </div>
+
+              {encomendas.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-[#2B2B2B]/10 p-10 text-center">
+                  <ClipboardList className="w-8 h-8 text-[#4A1525]/50 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-[#2B2B2B]/70">Nenhuma encomenda pendente no momento.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {encomendas.map((enc) => {
+                    const totalCustoEnc = Number(enc.custo_compra || 0) * Number(enc.quantidade || 1)
+                    return (
+                      <div
+                        key={enc.id}
+                        className="bg-white p-4 rounded-xl border border-[#2B2B2B]/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#D5E1D9] text-[#2B2B2B]">
+                              {enc.categoria}
+                            </span>
+                            <span className="text-xs font-bold text-[#4A1525]">
+                              {enc.quantidade} un
+                            </span>
+                            <span className="font-bold text-sm text-[#2B2B2B]">{enc.nome}</span>
+                          </div>
+
+                          <div className="text-xs text-[#2B2B2B]/75 flex flex-wrap gap-x-3 gap-y-1">
+                            <span>Custo unit.: <strong className="text-[#4A1525]">{brl(enc.custo_compra)}</strong></span>
+                            <span>Venda: <strong className="text-emerald-700">{brl(enc.preco_venda)}</strong></span>
+                            <span>Total compra: <strong>{brl(totalCustoEnc)}</strong></span>
+                          </div>
+
+                          {enc.observacao && (
+                            <p className="text-xs bg-[#F9F8F6] border border-[#2B2B2B]/10 rounded-lg px-2.5 py-1.5 text-[#2B2B2B]/80 break-words">
+                              <strong>Obs:</strong> {enc.observacao}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => concluirEncomendaParaEstoque(enc)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer touch-manipulation"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Comprei (integrar estoque)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEncomendas((prev) => prev.filter((item) => item.id !== enc.id))}
+                            title="Remover encomenda"
+                            className="p-2 rounded-xl text-[#2B2B2B]/40 hover:text-[#4A1525] hover:bg-[#4A1525]/10 cursor-pointer touch-manipulation"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {aba === 'financeiro' && (
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="bg-[#F9F8F6] border border-[#2B2B2B]/15 rounded-2xl p-5">
@@ -983,7 +1503,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setNovoFin({ ...novoFin, tipo: 'despesa' })}
-                    className={`py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                    className={`py-2 rounded-xl text-xs font-semibold border cursor-pointer touch-manipulation ${
                       novoFin.tipo === 'despesa' ? 'bg-[#4A1525] text-[#F9F8F6] border-[#4A1525]' : 'bg-white border-[#2B2B2B]/20'
                     }`}
                   >
@@ -992,7 +1512,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setNovoFin({ ...novoFin, tipo: 'receita' })}
-                    className={`py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                    className={`py-2 rounded-xl text-xs font-semibold border cursor-pointer touch-manipulation ${
                       novoFin.tipo === 'receita' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white border-[#2B2B2B]/20'
                     }`}
                   >
@@ -1005,7 +1525,7 @@ export default function App() {
                   <input
                     required placeholder="Ex: Embalagem / Frete / Conta" value={novoFin.descricao}
                     onChange={(e) => setNovoFin({ ...novoFin, descricao: e.target.value })}
-                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                   />
                 </div>
 
@@ -1015,7 +1535,7 @@ export default function App() {
                     <input
                       type="number" step="0.01" required value={novoFin.valor}
                       onChange={(e) => setNovoFin({ ...novoFin, valor: e.target.value })}
-                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                     />
                   </div>
                   <div>
@@ -1023,7 +1543,7 @@ export default function App() {
                     <input
                       type="date" required value={novoFin.data_vencimento}
                       onChange={(e) => setNovoFin({ ...novoFin, data_vencimento: e.target.value })}
-                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                     />
                   </div>
                 </div>
@@ -1033,14 +1553,14 @@ export default function App() {
                   <select
                     value={novoFin.status}
                     onChange={(e) => setNovoFin({ ...novoFin, status: e.target.value })}
-                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-sm"
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white border border-[#2B2B2B]/20 text-base sm:text-sm"
                   >
                     <option value="pendente">Pendente (gera lembrete)</option>
                     <option value="pago">Pago ou recebido</option>
                   </select>
                 </div>
 
-                <button type="submit" className="w-full py-2.5 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] font-semibold text-sm hover:bg-[#4A1525] cursor-pointer">
+                <button type="submit" className="w-full py-2.5 rounded-xl bg-[#2B2B2B] text-[#F9F8F6] font-semibold text-sm hover:bg-[#4A1525] cursor-pointer touch-manipulation">
                   Registrar conta
                 </button>
               </form>
@@ -1116,7 +1636,7 @@ export default function App() {
                         </span>
                         <button
                           onClick={() => alternarStatusFin(item)}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer touch-manipulation ${
                             item.status === 'pago'
                               ? 'bg-emerald-100 text-emerald-800'
                               : 'bg-amber-100 text-amber-900 border border-amber-400'
@@ -1127,7 +1647,7 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => excluirFinanceiro(item.id)}
-                          className="text-[#2B2B2B]/40 hover:text-[#4A1525] cursor-pointer"
+                          className="text-[#2B2B2B]/40 hover:text-[#4A1525] cursor-pointer touch-manipulation"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1141,10 +1661,11 @@ export default function App() {
         )}
       </main>
 
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#F9F8F6] border-t-2 border-[#4A1525] grid grid-cols-3 py-1.5 z-30">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 w-full bg-[#F9F8F6] border-t-2 border-[#4A1525] grid grid-cols-4 py-1.5 z-30">
         {[
           { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
-          { id: 'catalogo', label: 'Vinhos e perf.', icon: Wine },
+          { id: 'catalogo', label: 'Estoque', icon: Wine },
+          { id: 'encomendas', label: 'Encomendas', icon: ClipboardList, badge: encomendas.length },
           { id: 'financeiro', label: 'Contas', icon: DollarSign },
         ].map((item) => {
           const Icon = item.icon
@@ -1153,11 +1674,18 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setAba(item.id)}
-              className={`flex flex-col items-center justify-center py-1 text-[11px] font-semibold ${
+              className={`relative flex flex-col items-center justify-center py-1 text-[11px] font-semibold touch-manipulation ${
                 ativo ? 'text-[#4A1525]' : 'text-[#2B2B2B]/70'
               }`}
             >
-              <Icon className="w-5 h-5 mb-0.5" />
+              <div className="relative">
+                <Icon className="w-5 h-5 mb-0.5" />
+                {item.badge > 0 && (
+                  <span className="absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full bg-[#4A1525] text-[#F9F8F6] text-[9px] font-bold">
+                    {item.badge}
+                  </span>
+                )}
+              </div>
               {item.label}
             </button>
           )
